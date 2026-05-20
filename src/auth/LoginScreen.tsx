@@ -3,23 +3,24 @@
 /**
  * LoginScreen — login / splash (PLAN.md §7 screen 1).
  *
- * Offers every available way to connect:
- *   - Privy social login (creates/uses an embedded Solana wallet) — shown when
- *     `PRIVY_ENABLED` (a `NEXT_PUBLIC_PRIVY_APP_ID` is configured).
- *   - A curated set of known Solana wallets (Phantom, Solflare, Backpack) that
- *     is ALWAYS shown: an installed wallet gets a "Connect" action, a missing
- *     one gets an "Install" link. Any other Wallet-Standard wallet the browser
- *     exposes (e.g. Jupiter) is appended automatically.
+ * Ways in:
+ *   - "Sign in" — Privy login (social), which provisions/uses an embedded
+ *     Solana wallet.
+ *   - "Connect <wallet>" — shown when a Solana wallet is injected into the page
+ *     (a desktop extension, or — the mobile path — when the dapp is running
+ *     inside Phantom/Solflare's own in-app browser). Connects it directly via
+ *     the Wallet Standard, no Privy involved.
+ *   - "Open in Solflare / Phantom" — shown on a plain mobile browser (no wallet
+ *     injected): deeplinks that reload this dapp inside the wallet app's in-app
+ *     browser, where the "Connect" path above then applies.
  *
- * Both connect paths authenticate to the Phoenix API via the same
- * wallet-signature flow. Once a Rise session exists, calls `onAuthenticated`
- * if provided, otherwise routes to `/onboarding` (which itself short-circuits
- * to the trade screen when the user is already activated + registered).
+ * Once a Rise session exists, calls `onAuthenticated` if provided, otherwise
+ * routes to `/onboarding`.
  *
  * OWNED BY: Auth & Wallet agent (`src/auth/`).
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWallet } from "@/wallet/WalletProvider";
 import { PRIVY_ENABLED } from "@/lib/constants";
@@ -29,24 +30,6 @@ export interface LoginScreenProps {
   /** Called once a Rise session exists. Defaults to routing to `/onboarding`. */
   onAuthenticated?: () => void;
 }
-
-/**
- * Curated wallets always offered on the login screen, in display order. When a
- * wallet here is not installed the row becomes a link to its install page;
- * `brand` colours the monogram shown in place of the (absent) wallet icon.
- * `name` MUST match the wallet's Wallet-Standard name so it dedupes against
- * live auto-detection.
- */
-const KNOWN_WALLETS: { name: string; url: string; brand: string }[] = [
-  { name: "Phantom", url: "https://phantom.app/download", brand: "#534bb1" },
-  { name: "Solflare", url: "https://solflare.com/download", brand: "#fc7227" },
-  { name: "Backpack", url: "https://backpack.app/download", brand: "#e33e3f" },
-];
-
-/** A row in the wallet list — a connectable wallet, or an install link. */
-type WalletRow =
-  | { kind: "installed"; name: string; icon: string }
-  | { kind: "missing"; name: string; url: string; brand: string };
 
 /** Turn an unknown thrown value into a user-facing message. */
 function toMessage(error: unknown): string {
@@ -58,6 +41,31 @@ function toMessage(error: unknown): string {
 /** Sentinel for the Privy method in the per-button pending state. */
 const PRIVY_METHOD = "__privy__";
 
+/** True for mobile-browser user agents — where the in-app-browser deeplinks
+ *  are the way to reach an existing Phantom/Solflare wallet. */
+function isMobileBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  // iPadOS 13+ reports a desktop Mac UA — detect it via touch points.
+  const iPadOs = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+  return /Android|iPhone|iPad|iPod/i.test(ua) || iPadOs;
+}
+
+/**
+ * "Open in <wallet>" deeplinks. Each reloads this dapp inside the wallet app's
+ * in-app browser, where the wallet is injected and connectable. `url` is the
+ * page to open; `ref` identifies the requesting app — both URL-encoded.
+ */
+function walletBrowserLinks(): { solflare: string; phantom: string } | null {
+  if (typeof window === "undefined") return null;
+  const url = encodeURIComponent(window.location.href);
+  const ref = encodeURIComponent(window.location.origin);
+  return {
+    solflare: `https://solflare.com/ul/v1/browse/${url}?ref=${ref}`,
+    phantom: `https://phantom.app/ul/browse/${url}?ref=${ref}`,
+  };
+}
+
 export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
   const router = useRouter();
   const { wallet, isConnecting, connectPrivy, connectExternal, externalWallets } =
@@ -65,6 +73,9 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
   const [error, setError] = useState<string | null>(null);
   // Which connect method is in flight — so only that button shows "Connecting…".
   const [pending, setPending] = useState<string | null>(null);
+  // Mobile detection runs post-mount to avoid an SSR/client hydration mismatch.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => setIsMobile(isMobileBrowser()), []);
 
   const finish = useCallback(() => {
     if (onAuthenticated) onAuthenticated();
@@ -100,29 +111,13 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
     [connectExternal, finish],
   );
 
-  // Merge the curated known-wallet list with live Wallet-Standard detection:
-  // known wallets always appear (Connect when installed, Install when not);
-  // any other detected wallet (e.g. Jupiter) is appended.
-  const walletRows = useMemo<WalletRow[]>(() => {
-    const detected = new Map(externalWallets.map((w) => [w.name, w]));
-    const rows: WalletRow[] = [];
-    for (const known of KNOWN_WALLETS) {
-      const hit = detected.get(known.name);
-      if (hit) {
-        rows.push({ kind: "installed", name: hit.name, icon: hit.icon });
-        detected.delete(known.name);
-      } else {
-        rows.push({ kind: "missing", ...known });
-      }
-    }
-    for (const w of detected.values()) {
-      rows.push({ kind: "installed", name: w.name, icon: w.icon });
-    }
-    return rows;
-  }, [externalWallets]);
-
   // A session may already exist (e.g. the SDK restored it from localStorage).
   const alreadyConnected = wallet?.isConnected ?? false;
+  // A wallet is injected -> we're in its in-app browser (or a desktop with the
+  // extension). Otherwise, on mobile, offer the deeplinks into a wallet app.
+  const hasInjectedWallet = externalWallets.length > 0;
+  const walletLinks =
+    isMobile && !hasInjectedWallet ? walletBrowserLinks() : null;
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-app flex-col px-6 pb-10 pt-16">
@@ -153,97 +148,112 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
           >
             Continue
           </button>
-        ) : (
+        ) : PRIVY_ENABLED ? (
           <>
-            {/* Privy social login */}
-            {PRIVY_ENABLED ? (
+            {/* Social login is hidden when a wallet is already injected (a
+                wallet's in-app browser) — offering a fresh embedded wallet
+                there makes no sense; just connect the wallet you're in. */}
+            {!hasInjectedWallet ? (
               <button
                 type="button"
                 disabled={isConnecting}
                 onClick={() => void handlePrivy()}
                 className="w-full rounded-md bg-accent py-4 text-sm font-semibold text-accent-fg shadow-glow active:opacity-80 disabled:opacity-40"
               >
-                {pending === PRIVY_METHOD
-                  ? "Connecting…"
-                  : "Continue with social login"}
+                {pending === PRIVY_METHOD ? "Connecting…" : "Sign in"}
               </button>
             ) : null}
 
-            {/* Divider between Privy and the wallet list */}
-            {PRIVY_ENABLED ? (
-              <div className="flex items-center gap-3 py-1">
-                <span className="h-px flex-1 bg-border" />
-                <span className="text-[11px] uppercase tracking-wide text-fg-subtle">
-                  or connect a wallet
-                </span>
-                <span className="h-px flex-1 bg-border" />
-              </div>
-            ) : null}
-
-            {/* Wallet list — curated known wallets + any other detected one. */}
-            {walletRows.map((row) =>
-              row.kind === "installed" ? (
-                <button
-                  key={row.name}
-                  type="button"
-                  disabled={isConnecting}
-                  onClick={() => void handleExternal(row.name)}
-                  className="flex w-full items-center gap-3 rounded-md border border-border bg-bg-elevated px-4 py-3.5 text-sm font-medium text-fg active:bg-bg-muted disabled:opacity-40"
-                >
-                  {row.icon ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={row.icon}
-                      alt=""
-                      className="h-6 w-6 rounded"
-                      aria-hidden
-                    />
-                  ) : (
-                    <WalletMonogram name={row.name} brand="#3a2c1f" />
-                  )}
-                  <span>{row.name}</span>
-                  <span className="ml-auto text-xs text-fg-subtle">
-                    {pending === row.name ? "Connecting…" : "Connect"}
-                  </span>
-                </button>
-              ) : (
+            {/* Injected wallet(s) — connect directly via the Wallet Standard. */}
+            {hasInjectedWallet ? (
+              <>
+                {externalWallets.map((w) => (
+                  <button
+                    key={w.name}
+                    type="button"
+                    disabled={isConnecting}
+                    onClick={() => void handleExternal(w.name)}
+                    className="flex w-full items-center gap-3 rounded-md border border-border bg-bg-elevated px-4 py-3.5 text-sm font-medium text-fg active:bg-bg-muted disabled:opacity-40"
+                  >
+                    {w.icon ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={w.icon}
+                        alt=""
+                        className="h-6 w-6 rounded"
+                        aria-hidden
+                      />
+                    ) : null}
+                    <span>Connect {w.name}</span>
+                    <span className="ml-auto text-xs text-fg-subtle">
+                      {pending === w.name ? "Connecting…" : "Connect"}
+                    </span>
+                  </button>
+                ))}
+              </>
+            ) : walletLinks ? (
+              /* Plain mobile browser — deeplink into a wallet's in-app browser. */
+              <>
+                <Divider label="or open in a wallet app" />
                 <a
-                  key={row.name}
-                  href={row.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex w-full items-center gap-3 rounded-md border border-border bg-bg-elevated px-4 py-3.5 text-sm font-medium text-fg-muted active:bg-bg-muted"
+                  href={walletLinks.solflare}
+                  className="flex w-full items-center gap-3 rounded-md border border-border bg-bg-elevated px-4 py-3.5 text-sm font-medium text-fg active:bg-bg-muted"
                 >
-                  <WalletMonogram name={row.name} brand={row.brand} />
-                  <span>{row.name}</span>
-                  <span className="ml-auto text-xs text-fg-subtle">
-                    Install ↗
-                  </span>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/wallet-solflare.svg"
+                    alt=""
+                    className="h-6 w-6 rounded"
+                    aria-hidden
+                  />
+                  <span>Open in Solflare</span>
+                  <span className="ml-auto text-xs text-fg-subtle">↗</span>
                 </a>
-              ),
-            )}
+                <a
+                  href={walletLinks.phantom}
+                  className="flex w-full items-center gap-3 rounded-md border border-border bg-bg-elevated px-4 py-3.5 text-sm font-medium text-fg active:bg-bg-muted"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/wallet-phantom.svg"
+                    alt=""
+                    className="h-6 w-6"
+                    aria-hidden
+                  />
+                  <span>Open in Phantom</span>
+                  <span className="ml-auto text-xs text-fg-subtle">↗</span>
+                </a>
+              </>
+            ) : null}
           </>
+        ) : (
+          <div
+            role="alert"
+            className="rounded-md border border-down/40 bg-down-bg px-3 py-2 text-xs leading-snug text-down"
+          >
+            Login is unavailable — set `NEXT_PUBLIC_PRIVY_APP_ID` to enable it.
+          </div>
         )}
 
         <p className="px-2 text-center text-[11px] leading-snug text-fg-subtle">
-          {PRIVY_ENABLED
-            ? "Social login creates a secure embedded wallet. You can also connect an existing Solana wallet."
-            : "Connect a Solana wallet — or install one — to start trading."}
+          {hasInjectedWallet
+            ? "Connect your wallet to start trading on Vibhu."
+            : "Sign in to create or access your secure Solana wallet — no browser extension or seed phrase needed."}
         </p>
       </div>
     </main>
   );
 }
 
-/** Brand-coloured letter tile shown when a wallet has no icon to display. */
-function WalletMonogram({ name, brand }: { name: string; brand: string }) {
+/** A labelled "or" divider between connect options. */
+function Divider({ label }: { label: string }) {
   return (
-    <span
-      className="flex h-6 w-6 items-center justify-center rounded text-[11px] font-bold text-white"
-      style={{ backgroundColor: brand }}
-      aria-hidden
-    >
-      {name.charAt(0)}
-    </span>
+    <div className="flex items-center gap-3 py-1">
+      <span className="h-px flex-1 bg-border" />
+      <span className="text-[11px] uppercase tracking-wide text-fg-subtle">
+        {label}
+      </span>
+      <span className="h-px flex-1 bg-border" />
+    </div>
   );
 }

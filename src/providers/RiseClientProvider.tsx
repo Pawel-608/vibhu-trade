@@ -7,7 +7,8 @@
  * once per app session and exposes it through React context plus a
  * `usePhoenixClient()` hook. Configures HTTP (`apiUrl`), RPC (`rpcUrl`),
  * websocket streams (`ws`), and shared auth/session handling (`auth: true`
- * with browser localStorage persistence) per PLAN.md §3 / §4.
+ * with browser localStorage persistence) per PLAN.md §3 / §4, plus optional
+ * Flight builder-fee routing (PLAN.md §5).
  *
  * SHARED PROVIDER — feature agents must not edit this file. Consume the client
  * via `usePhoenixClient()`:
@@ -26,9 +27,14 @@ import {
 import {
   createPhoenixClient,
   LocalStorageAuthSessionStorage,
+  type Authority,
   type PhoenixClient,
 } from "@ellipsis-labs/rise";
 import {
+  FLIGHT_BUILDER_AUTHORITY,
+  FLIGHT_BUILDER_PDA_INDEX,
+  FLIGHT_BUILDER_SUBACCOUNT_INDEX,
+  FLIGHT_ENABLED,
   PHOENIX_API_URL,
   PHOENIX_API_PROXY_PATH,
   PHOENIX_WS_URL,
@@ -75,9 +81,22 @@ export function RiseClientProvider({ children }: { children: ReactNode }) {
             ? new LocalStorageAuthSessionStorage()
             : undefined,
       },
-      // Flight builder routing is configured later — see PLAN.md §5 and
-      // src/lib/constants.ts (FLIGHT_* placeholders). Left unset until the
-      // builder is registered so order instructions are not Flight-wrapped yet.
+      // Flight builder routing (PLAN.md §5). When a builder authority is
+      // configured (NEXT_PUBLIC_FLIGHT_BUILDER_AUTHORITY), the SDK auto-wraps
+      // supported order instructions — `client.ixs.buildPlaceLimitOrder` /
+      // `buildPlaceMarketOrder`, used by OrderEntry/Positions — through the
+      // Flight program, so builder fees accrue to the builder's trader
+      // account. Spread in only when enabled, so that when it is unconfigured
+      // orders are placed natively (un-wrapped) and nothing else changes.
+      ...(FLIGHT_ENABLED
+        ? {
+            flight: {
+              builderAuthority: FLIGHT_BUILDER_AUTHORITY as Authority,
+              builderPdaIndex: FLIGHT_BUILDER_PDA_INDEX,
+              builderSubaccountIndex: FLIGHT_BUILDER_SUBACCOUNT_INDEX,
+            },
+          }
+        : {}),
     });
   }, []);
 

@@ -28,7 +28,7 @@ export const PHOENIX_WS_URL =
 /** Solana RPC endpoint. Empty string -> SDK falls back to its own default. */
 export const SOLANA_RPC_URL = process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? "";
 
-/** Privy app ID. Empty -> Privy auth is disabled, external-wallet path only. */
+/** Privy app ID. Empty -> login is disabled (see `PRIVY_ENABLED`). */
 export const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
 
 /**
@@ -51,14 +51,41 @@ export const tradeRoute = (symbol: string = DEFAULT_SYMBOL): string =>
 export const PHOENIX_PROGRAM_ID_PLACEHOLDER =
   "PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY";
 
+/** Parse an optional 0–255 account-index env var, falling back to 0. */
+function flightAccountIndex(raw: string | undefined): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 && n <= 255 ? n : 0;
+}
+
 /**
- * Flight builder config placeholders (PLAN.md §5). The builder authority
- * keypair is created by the standalone flight-register script (owned by the
- * scripts/ agent). Fill these once the builder is registered.
+ * Flight builder routing (PLAN.md §5).
+ *
+ * `FLIGHT_BUILDER_AUTHORITY` is the public key of the dedicated builder wallet
+ * registered with Phoenix's Flight program by the one-time
+ * `scripts/register-flight-builder.ts` (see `scripts/FLIGHT-RUNBOOK.md`).
+ *
+ * When it is set, `RiseClientProvider` passes a `flight` config to
+ * `createPhoenixClient`, and the Rise SDK auto-wraps supported order
+ * instructions (limit + market) through the Flight program so builder fees
+ * accrue to that builder's fee-collector trader account. Empty -> orders are
+ * placed natively and earn no builder fee.
+ *
+ * The PDA / subaccount indices select the builder's fee-collector trader
+ * account and MUST match the values used at registration (both default 0).
  */
-export const FLIGHT_BUILDER_AUTHORITY_PLACEHOLDER = "";
-export const FLIGHT_BUILDER_PDA_INDEX = 0;
-export const FLIGHT_BUILDER_SUBACCOUNT_INDEX = 0;
+export const FLIGHT_BUILDER_AUTHORITY =
+  process.env.NEXT_PUBLIC_FLIGHT_BUILDER_AUTHORITY?.trim() ?? "";
+
+export const FLIGHT_BUILDER_PDA_INDEX = flightAccountIndex(
+  process.env.NEXT_PUBLIC_FLIGHT_BUILDER_PDA_INDEX,
+);
+
+export const FLIGHT_BUILDER_SUBACCOUNT_INDEX = flightAccountIndex(
+  process.env.NEXT_PUBLIC_FLIGHT_BUILDER_SUBACCOUNT_INDEX,
+);
+
+/** Whether Flight builder-fee routing is enabled (requires a builder authority). */
+export const FLIGHT_ENABLED = FLIGHT_BUILDER_AUTHORITY.length > 0;
 
 /** Whether the Privy login path is enabled (requires a configured app ID). */
 export const PRIVY_ENABLED = PRIVY_APP_ID.length > 0;
