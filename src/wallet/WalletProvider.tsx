@@ -67,6 +67,7 @@ import {
 import type { AuthSession, PhoenixClient } from "@ellipsis-labs/rise";
 import { usePhoenixClient } from "@/providers/RiseClientProvider";
 import { PRIVY_ENABLED } from "@/lib/constants";
+import { trackWalletConnect } from "@/lib/analytics";
 import type {
   AppWallet,
   ExternalWalletOption,
@@ -306,6 +307,12 @@ function PrivyWalletProvider({ children }: { children: ReactNode }) {
   const [isConnecting, setIsConnecting] = useState(false);
   const externalWallets = useDiscoveredWallets();
 
+  // Record a wallet-connect analytics event when a wallet first attaches.
+  // Fire-and-forget — never affects the connect flow.
+  useEffect(() => {
+    if (wallet) trackWalletConnect(wallet);
+  }, [wallet]);
+
   // Privy creates the embedded wallet asynchronously after login, so the
   // `solanaWallets` array changes across renders. `connectPrivy` polls for it;
   // a ref keeps the polling loop reading the *latest* array rather than a
@@ -528,6 +535,12 @@ function ExternalOnlyWalletProvider({ children }: { children: ReactNode }) {
   const [wallet, setWallet] = useState<AppWallet | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const externalWallets = useDiscoveredWallets();
+
+  // Record a wallet-connect analytics event when a wallet first attaches.
+  // Fire-and-forget — never affects the connect flow.
+  useEffect(() => {
+    if (wallet) trackWalletConnect(wallet);
+  }, [wallet]);
   const activeWallet = useRef<StandardWallet | null>(null);
 
   const connectExternal = useCallback(
