@@ -102,9 +102,13 @@ const BUILDER_KEYPAIR_PATH =
   process.env.BUILDER_KEYPAIR_PATH ??
   `${homedir()}/.config/solana/phoenix-flight-builder.json`;
 
-/** Solana RPC URL. Override with env var: SOLANA_RPC_URL */
-const RPC_URL =
-  process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
+/** Solana RPC URL — Solana Vibe Station, from the SOLANA_RPC_URL env var. */
+const RPC_URL = process.env.SOLANA_RPC_URL;
+if (!RPC_URL) {
+  throw new Error(
+    "SOLANA_RPC_URL is not set — export your Solana Vibe Station RPC URL before running this script.",
+  );
+}
 
 /** Phoenix API URL (used for exchange metadata). Override: PHOENIX_API_URL */
 const PHOENIX_API_URL =
