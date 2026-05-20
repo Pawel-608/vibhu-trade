@@ -49,6 +49,27 @@ export function isAmountInputValid(input: string): boolean {
 }
 
 /**
+ * Format an unscaled `bigint` token amount into a decimal display string —
+ * the inverse of `parseAmountToBigint`. Pure integer arithmetic; trailing
+ * fraction zeros are trimmed (an integer amount renders with no point).
+ */
+export function formatTokenAmount(
+  raw: bigint,
+  decimals: number = COLLATERAL_DECIMALS,
+): string {
+  const negative = raw < 0n;
+  const abs = negative ? -raw : raw;
+  const base = 10n ** BigInt(decimals);
+  const intPart = (abs / base).toString();
+  const frac = (abs % base)
+    .toString()
+    .padStart(decimals, "0")
+    .replace(/0+$/, "");
+  const body = frac.length > 0 ? `${intPart}.${frac}` : intPart;
+  return negative ? `-${body}` : body;
+}
+
+/**
  * The trader's perps overview, derived from a `TraderView` snapshot. All
  * monetary fields are kept as `TokenAmount` (the SDK's `{ value, decimals, ui }`
  * shape) so the display edge can format without floats.

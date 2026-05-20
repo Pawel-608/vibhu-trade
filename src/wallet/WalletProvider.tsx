@@ -59,6 +59,7 @@ import {
   useSignTransaction as useSolanaSignTransaction,
   useSignMessage as useSolanaSignMessage,
   useCreateWallet as useCreateSolanaWallet,
+  useExportWallet as useSolanaExportWallet,
   type ConnectedStandardSolanaWallet,
   type UseSignTransaction,
   type UseSignMessage,
@@ -299,6 +300,7 @@ function PrivyWalletProvider({ children }: { children: ReactNode }) {
   const { signTransaction } = useSolanaSignTransaction();
   const { signMessage } = useSolanaSignMessage();
   const { createWallet } = useCreateSolanaWallet();
+  const { exportWallet } = useSolanaExportWallet();
 
   const [wallet, setWallet] = useState<AppWallet | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -442,6 +444,17 @@ function PrivyWalletProvider({ children }: { children: ReactNode }) {
     setWallet(null);
   }, [client, authenticated, logout]);
 
+  const exportPrivateKey = useCallback(async () => {
+    if (!wallet || wallet.kind !== "privy-embedded") {
+      throw new Error(
+        "Key export is only available for the Privy embedded wallet.",
+      );
+    }
+    // Opens Privy's secure export modal — the raw key is shown only inside
+    // Privy's iframe and never passes through app code. Resolves on close.
+    await exportWallet({ address: wallet.authority });
+  }, [wallet, exportWallet]);
+
   const value = useMemo<WalletContextValue>(
     () => ({
       wallet,
@@ -450,6 +463,7 @@ function PrivyWalletProvider({ children }: { children: ReactNode }) {
       connectExternal,
       externalWallets,
       disconnect,
+      exportPrivateKey,
     }),
     [
       wallet,
@@ -458,6 +472,7 @@ function PrivyWalletProvider({ children }: { children: ReactNode }) {
       connectExternal,
       externalWallets,
       disconnect,
+      exportPrivateKey,
     ],
   );
 
@@ -551,6 +566,12 @@ function ExternalOnlyWalletProvider({ children }: { children: ReactNode }) {
     setWallet(null);
   }, [client]);
 
+  const exportPrivateKey = useCallback(async () => {
+    throw new Error(
+      "Private-key export is only available for the embedded wallet.",
+    );
+  }, []);
+
   const value = useMemo<WalletContextValue>(
     () => ({
       wallet,
@@ -559,6 +580,7 @@ function ExternalOnlyWalletProvider({ children }: { children: ReactNode }) {
       connectExternal,
       externalWallets,
       disconnect,
+      exportPrivateKey,
     }),
     [
       wallet,
@@ -567,6 +589,7 @@ function ExternalOnlyWalletProvider({ children }: { children: ReactNode }) {
       connectExternal,
       externalWallets,
       disconnect,
+      exportPrivateKey,
     ],
   );
 

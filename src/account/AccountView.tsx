@@ -47,11 +47,7 @@ export function AccountView() {
       <section className="flex flex-col gap-2">
         <SectionHeading
           title="Equity & Balances"
-          trailing={
-            <span className="font-mono text-[11px] text-fg-subtle">
-              {shortenAddress(authority)}
-            </span>
-          }
+          trailing={<CopyableAddress address={authority} />}
         />
 
         {isLoading ? (
@@ -69,6 +65,8 @@ export function AccountView() {
       </section>
 
       <CollateralActions onChanged={refetch} />
+
+      <ExportKeyButton />
 
       <LogOutButton />
     </div>
@@ -108,6 +106,58 @@ function LogOutButton() {
     >
       {isLoggingOut ? "Logging out…" : "Log out"}
     </button>
+  );
+}
+
+/* --------------------------------------------------------------------------
+ * Export private key
+ * ----------------------------------------------------------------------- */
+
+/**
+ * Reveals the embedded wallet's private key via Privy's secure export modal
+ * (`useWallet().exportPrivateKey()` -> Privy's `exportWallet`). The raw key is
+ * shown only inside Privy's iframe — it never passes through this app.
+ *
+ * Rendered only for the Privy embedded wallet: external wallets (Phantom,
+ * Solflare, …) manage their own keys, so the button is hidden for them.
+ */
+function ExportKeyButton() {
+  const { wallet, exportPrivateKey } = useWallet();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (wallet?.kind !== "privy-embedded") return null;
+
+  const handleExport = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await exportPrivateKey();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not export the key.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <button
+        type="button"
+        onClick={handleExport}
+        disabled={busy}
+        className="w-full rounded-md border border-border py-3 text-sm font-semibold text-fg-muted active:bg-bg-muted disabled:opacity-50"
+      >
+        {busy ? "Opening…" : "Export private key"}
+      </button>
+      <p className="px-1 text-[11px] leading-snug text-fg-subtle">
+        Opens a secure Privy window with your embedded wallet&apos;s private
+        key. Never share it — anyone who has it controls your funds.
+      </p>
+      {error ? (
+        <p className="px-1 text-[11px] leading-snug text-down">{error}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -312,5 +362,67 @@ function SectionHeading({
       </h2>
       {trailing}
     </div>
+  );
+}
+
+/**
+ * The connected wallet address as a tap-to-copy control. Copies the FULL
+ * address (not the shortened display form) and shows a brief check
+ * confirmation. The clipboard write can reject in an insecure context, so it
+ * is wrapped defensively.
+ */
+function CopyableAddress({ address }: { address: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard unavailable (insecure context / denied) — nothing to do.
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      aria-label="Copy account address"
+      className="-mr-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 font-mono text-[11px] text-fg-subtle active:bg-bg-muted"
+    >
+      <span>{shortenAddress(address)}</span>
+      {copied ? (
+        <svg
+          width="11"
+          height="11"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="text-up"
+          aria-hidden="true"
+        >
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+      ) : (
+        <svg
+          width="11"
+          height="11"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="9" y="9" width="13" height="13" rx="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      )}
+    </button>
   );
 }

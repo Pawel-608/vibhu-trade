@@ -27,10 +27,16 @@ import { cn } from "@/lib/cn";
 import type { Authority } from "@ellipsis-labs/rise";
 import {
   COLLATERAL_DECIMALS,
+  formatTokenAmount,
   isAmountInputValid,
   parseAmountToBigint,
 } from "./lib";
 import { DEFAULT_PDA_INDEX } from "./useTraderState";
+import {
+  MIN_SOL_LAMPORTS,
+  SOL_DECIMALS,
+  useWalletFunds,
+} from "./useWalletFunds";
 
 type CollateralMode = "deposit" | "withdraw";
 
@@ -50,6 +56,7 @@ export function CollateralActions({ onChanged }: CollateralActionsProps) {
   const { wallet } = useWallet();
   const router = useRouter();
   const connected = !!wallet?.isConnected && !!wallet.authority;
+  const funds = useWalletFunds(wallet?.authority);
 
   const [mode, setMode] = useState<CollateralMode>("deposit");
   const [amount, setAmount] = useState("");
@@ -60,6 +67,18 @@ export function CollateralActions({ onChanged }: CollateralActionsProps) {
   const amountTouched = amount.trim().length > 0;
   const amountValid = parsedAmount !== null;
   const busy = phase.kind === "pending";
+
+  const usdcRaw = funds.data?.usdcRaw;
+  const solLamports = funds.data?.solLamports;
+  // A deposit is hard-capped by the wallet's USDC balance.
+  const insufficientUsdc =
+    mode === "deposit" &&
+    parsedAmount !== null &&
+    usdcRaw !== undefined &&
+    parsedAmount > usdcRaw;
+  // Deposits/withdrawals pay a SOL fee plus token-account rent. Non-blocking:
+  // accounts that already exist need no fresh rent, so this only warns.
+  const solLow = solLamports !== undefined && solLamports < MIN_SOL_LAMPORTS;
 
   function handleAmountChange(next: string) {
     // Keep only well-formed numeric input; reject stray characters early.
@@ -119,13 +138,7 @@ export function CollateralActions({ onChanged }: CollateralActionsProps) {
       setAmount("");
       onChanged?.();
     } catch (err) {
-      setPhase({
-        kind: "error",
-        message:
-          err instanceof Error
-            ? err.message
-            : "Transaction failed. Please try again.",
-      });
+      setPhase({ kind: "error", message: friendlyTxError(err) });
     }
   }
 
@@ -202,20 +215,57 @@ export function CollateralActions({ onChanged }: CollateralActionsProps) {
                 : "Enter a valid number."}
             </span>
           ) : null}
+
+          {insufficientUsdc ? (
+            <span className="text-[11px] text-down">
+              Insufficient USDC — your wallet holds{" "}
+              {formatTokenAmount(usdcRaw ?? 0n)} USDC.
+            </span>
+          ) : null}
+
+          {mode === "deposit" && usdcRaw !== undefined ? (
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-fg-subtle">
+                Wallet balance:{" "}
+                <span className="font-mono text-fg-muted">
+                  {formatTokenAmount(usdcRaw)} USDC
+                </span>
+              </span>
+              <button
+                type="button"
+                disabled={busy || usdcRaw === 0n}
+                onClick={() => handleAmountChange(formatTokenAmount(usdcRaw))}
+                className="font-semibold text-accent active:opacity-70 disabled:opacity-40"
+              >
+                Max
+              </button>
+            </div>
+          ) : null}
         </div>
+
+        {/* Low-SOL warning — deposits/withdrawals need SOL for fees + rent. */}
+        {solLow ? (
+          <div className="rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-[11px] leading-snug text-fg-muted">
+            <span className="font-semibold text-accent">Low SOL balance</span> (
+            {formatTokenAmount(solLamports ?? 0n, SOL_DECIMALS)} SOL). Solana
+            charges a network fee and account rent — add a little SOL to your
+            wallet so deposits and withdrawals go through.
+          </div>
+        ) : null}
 
         {/* Submit — or a connect-wallet button when no wallet is attached. */}
         {connected ? (
           <button
             type="button"
-            disabled={!amountValid || busy}
+            disabled={!amountValid || busy || insufficientUsdc}
             onClick={handleSubmit}
             className={cn(
               "flex h-12 items-center justify-center rounded-md text-sm font-semibold transition-opacity",
               mode === "deposit"
                 ? "bg-accent text-accent-fg"
                 : "border border-border bg-transparent text-fg",
-              (!amountValid || busy) && "cursor-not-allowed opacity-40",
+              (!amountValid || busy || insufficientUsdc) &&
+                "cursor-not-allowed opacity-40",
             )}
           >
             {busy ? `${actionLabel}ing…` : `${actionLabel} Collateral`}
@@ -235,6 +285,24 @@ export function CollateralActions({ onChanged }: CollateralActionsProps) {
       </div>
     </section>
   );
+}
+
+/**
+ * Map a raw transaction error to a user-facing message. Solana's insufficient-
+ * funds failures ("insufficient lamports", "found no record of a prior
+ * credit", rent shortfalls) are cryptic — surface a clear SOL hint instead.
+ */
+function friendlyTxError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes("insufficient lamports") ||
+    lower.includes("insufficient funds for rent") ||
+    lower.includes("debit an account but found no record")
+  ) {
+    return "Not enough SOL to cover the network fee and account rent. Add some SOL to your wallet and try again.";
+  }
+  return raw.length > 0 ? raw : "Transaction failed. Please try again.";
 }
 
 function TxFeedback({ phase }: { phase: TxPhase }) {
