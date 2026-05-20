@@ -304,6 +304,25 @@ export async function submitTransaction(
     ...(ixs as readonly Instruction[]),
   ];
 
+  // DIAGNOSTIC: full dump of the transaction being submitted — every
+  // instruction, its program, account list and data size — so the exact
+  // failing instruction can be identified. (ComputeBudget111… = compute
+  // budget, EtrnLzg… = Phoenix perps, ATokenGPv… = ATA, Tokenkeg… = SPL
+  // Token, EMBER… = Ember.)
+  console.log(
+    `[trading] ===== SUBMITTING TRANSACTION: ${allIxs.length} instruction(s) =====`,
+  );
+  allIxs.forEach((ix, i) => {
+    const accts = (ix.accounts ?? []) as ReadonlyArray<{ address: string }>;
+    console.log(
+      `[trading] ix[${i}] program=${ix.programAddress} ` +
+        `data=${ix.data ? ix.data.length : 0}b accounts=${accts.length}`,
+    );
+    accts.forEach((a, j) =>
+      console.log(`[trading]   ix[${i}].acct[${j}] = ${a.address}`),
+    );
+  });
+
   // Assemble a v0 transaction message: fee payer + blockhash lifetime + ixs.
   const transactionMessage = pipe(
     createTransactionMessage({ version: 0 }),
@@ -316,6 +335,9 @@ export async function submitTransaction(
   const compiled = compileTransaction(transactionMessage);
   const signed = await wallet.signTransaction(compiled);
   const wire = toBase64Wire(signed);
+  // DIAGNOSTIC: the full signed transaction — paste this to decode every
+  // instruction exactly as the chain sees it.
+  console.log(`[trading] signed base64 wire transaction:\n${wire}`);
 
   // Submit. `getSignatureFromTransaction` reads the signature off the signed tx
   // when available; otherwise the RPC echoes it back.

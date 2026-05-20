@@ -49,12 +49,20 @@ export function RiseClientProvider({ children }: { children: ReactNode }) {
       typeof window !== "undefined"
         ? `${window.location.origin}${PHOENIX_API_PROXY_PATH}`
         : PHOENIX_API_URL;
+    // The SDK needs a WORKING Solana RPC for on-chain reads — notably
+    // `buildRegisterTrader`'s `accountExists()` pre-check, which decides
+    // whether the trader is already registered. With no RPC the SDK falls back
+    // to a dead default, that check silently fails, and the app builds a
+    // doomed `register_trader` tx for an account that already exists. Route
+    // RPC through the same-origin `/api/rpc` proxy (server-side `SOLANA_RPC_URL`
+    // is the real, working endpoint — it stays out of the browser bundle).
+    const rpcUrl =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/api/rpc`
+        : SOLANA_RPC_URL || undefined;
     return createPhoenixClient({
       apiUrl,
-      // Empty string -> let the SDK fall back to NEXT_PUBLIC_SOLANA_RPC_URL /
-      // its own default. Pass undefined rather than "" so the SDK fallback
-      // logic kicks in.
-      rpcUrl: SOLANA_RPC_URL || undefined,
+      rpcUrl,
       // Enable live WS streams (l2Book, fills, candles, markPrice, ...).
       // Explicit url so it is NOT derived from the proxied apiUrl.
       ws: { url: PHOENIX_WS_URL },
