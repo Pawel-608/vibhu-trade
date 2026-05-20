@@ -18,6 +18,7 @@ import {
   createChart,
   CandlestickSeries,
   HistogramSeries,
+  LineStyle,
   type IChartApi,
   type ISeriesApi,
   type CandlestickData,
@@ -29,6 +30,9 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/cn";
 import { usePhoenixClient } from "@/providers/RiseClientProvider";
 import { useStreamLatest } from "./useStream";
+// Market Data is allowed to read Trading state (CONTRACTS §4) — used here to
+// draw the connected trader's entry price for the charted market.
+import { useTraderAccount } from "@/trading/useTraderAccount";
 
 export interface ChartProps {
   symbol: string;
@@ -114,6 +118,23 @@ export function Chart({ symbol, timeframe }: ChartProps) {
       : null,
     [client, symbol, tf],
   );
+
+  // The connected trader's open position in THIS market, if any. Matched by
+  // symbol so the entry line is only drawn for the asset actually charted; a
+  // closed/absent position (or no wallet) yields a null `entryPrice`.
+  const account = useTraderAccount();
+  const myPosition =
+    account.status === "ready"
+      ? account.view?.positions?.find(
+          (p) =>
+            p.symbol.toUpperCase() === symbol.toUpperCase() &&
+            p.positionSize.value !== 0,
+        )
+      : undefined;
+  const entryPrice = myPosition
+    ? Number.parseFloat(myPosition.entryPrice.ui.replace(/,/g, ""))
+    : null;
+  const positionIsLong = (myPosition?.positionSize.value ?? 0) > 0;
 
   // Create the chart once.
   useEffect(() => {
@@ -227,6 +248,28 @@ export function Chart({ symbol, timeframe }: ChartProps) {
           : "rgba(246,90,90,0.3)",
     });
   }, [liveCandle, symbol, tf]);
+
+  // Draw a dashed horizontal line at the trader's entry price for this market.
+  // Price lines are independent of series data, so they survive the `setData`
+  // resets on symbol/timeframe switches. The effect re-runs whenever the entry
+  // price or its direction changes — cleanup removes the stale line — and the
+  // line simply disappears once the position is closed (`entryPrice` -> null).
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!series || entryPrice == null || !Number.isFinite(entryPrice)) return;
+
+    const line = series.createPriceLine({
+      price: entryPrice,
+      color: positionIsLong ? UP : DOWN,
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: positionIsLong ? "Long entry" : "Short entry",
+    });
+    return () => {
+      series.removePriceLine(line);
+    };
+  }, [entryPrice, positionIsLong]);
 
   return (
     <div className="flex flex-col gap-2">
