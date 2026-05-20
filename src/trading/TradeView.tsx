@@ -16,12 +16,13 @@ import { cn } from "@/lib/cn";
 import { OrderEntry } from "./OrderEntry";
 import { Positions } from "./Positions";
 import { OpenOrders } from "./OpenOrders";
+import { TradesHistory } from "./TradesHistory";
 
 export interface TradeViewProps {
   symbol: string;
 }
 
-type ActivityTab = "positions" | "orders";
+type ActivityTab = "positions" | "orders" | "trades";
 
 export function TradeView({ symbol }: TradeViewProps) {
   const [tab, setTab] = useState<ActivityTab>("positions");
@@ -41,13 +42,14 @@ export function TradeView({ symbol }: TradeViewProps) {
           <TabButton active={tab === "orders"} onClick={() => setTab("orders")}>
             Open Orders
           </TabButton>
+          <TabButton active={tab === "trades"} onClick={() => setTab("trades")}>
+            Trades
+          </TabButton>
         </div>
 
-        {tab === "positions" ? (
-          <Positions symbol={symbol} />
-        ) : (
-          <OpenOrders symbol={symbol} />
-        )}
+        {tab === "positions" && <Positions symbol={symbol} />}
+        {tab === "orders" && <OpenOrders symbol={symbol} />}
+        {tab === "trades" && <TradesHistory />}
       </section>
     </div>
   );

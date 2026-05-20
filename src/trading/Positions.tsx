@@ -76,17 +76,22 @@ export function Positions({ symbol }: PositionsProps) {
 
   const view = account.view;
   const allPositions = view?.positions ?? [];
-  // Only show positions with a non-zero size; optionally filter to one market.
-  const positions = allPositions.filter((p) => {
-    if (p.positionSize.value === 0) return false;
-    if (symbol) return p.symbol.toUpperCase() === symbol.toUpperCase();
-    return true;
-  });
+  // Show every open position (non-zero size). The current market's position is
+  // pinned to the top; the rest keep their order (Array.sort is stable).
+  const cur = symbol?.toUpperCase();
+  const positions = allPositions
+    .filter((p) => p.positionSize.value !== 0)
+    .sort((a, b) => {
+      if (!cur) return 0;
+      const aCur = a.symbol.toUpperCase() === cur;
+      const bCur = b.symbol.toUpperCase() === cur;
+      return aCur === bCur ? 0 : aCur ? -1 : 1;
+    });
 
   if (positions.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-bg-elevated p-5 text-center text-xs text-fg-muted">
-        No open positions{symbol ? ` in ${symbol}` : ""}.
+        No open positions.
       </div>
     );
   }
@@ -121,7 +126,12 @@ function PositionRow({ position }: { position: Position }) {
 
   async function handleClose() {
     if (!wallet || account.status !== "ready" || !account.authority) return;
-    const absSize = Math.abs(sizeValue).toString();
+    // `positionSize.value` is RAW base lots; `buildMarketOrderPacket` expects
+    // the size in UI base units and scales it by the market's
+    // `baseLotsDecimals`. Passing `.value` double-scaled the order (e.g. 17
+    // lots -> 1700), and the reduce-only IOC then failed its minimum-fill
+    // check. Use the UI amount, sign stripped.
+    const absSize = position.positionSize.ui.replace(/^-/, "");
 
     await tx.run(
       async () => {
@@ -177,7 +187,10 @@ function PositionRow({ position }: { position: Position }) {
       </div>
 
       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
-        <Stat label="Size" value={Math.abs(sizeValue).toString()} />
+        <Stat
+          label="Size"
+          value={position.positionSize.ui.replace(/^-/, "")}
+        />
         <Stat label="Notional" value={`$${position.positionValue.ui}`} />
         <Stat label="Entry" value={`$${position.entryPrice.ui}`} />
         <Stat

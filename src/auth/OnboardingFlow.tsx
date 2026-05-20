@@ -122,6 +122,44 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   }, [client, wallet]);
 
   /* ----------------------------------------------------------------------- */
+  /* Registration check — skip step 2 if the trader already exists            */
+  /* ----------------------------------------------------------------------- */
+
+  /**
+   * Probe whether the trader account already exists. Builds the register-trader
+   * instruction but does NOT submit it — the SDK's `accountExists()` pre-check
+   * (needs the working RPC, now wired via /api/rpc) throws an "already exists"
+   * error when the account is present.
+   */
+  const checkRegistered = useCallback(async (): Promise<boolean> => {
+    if (!wallet) return false;
+    try {
+      await client.ixs.buildRegisterTrader({
+        authority: wallet.authority as Authority,
+        marginType: MarginType.Cross,
+      });
+      return false; // builder succeeded -> not registered yet
+    } catch (e) {
+      if (isAlreadyRegistered(e)) return true;
+      throw e; // unrelated error -> let the caller fall back
+    }
+  }, [client, wallet]);
+
+  /**
+   * Past the invite gate: jump straight to `done` (-> trade screen) when the
+   * trader is already registered, otherwise show the registration step.
+   */
+  const resolveRegistration = useCallback(async () => {
+    try {
+      setPhase((await checkRegistered()) ? "done" : "needs-registration");
+    } catch {
+      // Probe failed (e.g. a transient RPC error) — show the registration
+      // step; `handleRegister` still treats "already exists" as success.
+      setPhase("needs-registration");
+    }
+  }, [checkRegistered]);
+
+  /* ----------------------------------------------------------------------- */
   /* Initial status probe                                                    */
   /* ----------------------------------------------------------------------- */
 
@@ -138,7 +176,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       // 1. Already whitelisted? Skip invite activation entirely.
       const status = await invite.checkWallet(wallet.authority);
       if (status.whitelisted) {
-        setPhase("needs-registration");
+        await resolveRegistration();
         return;
       }
 
@@ -148,7 +186,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           authority: wallet.authority,
           referral_code: PHOENIX_REFERRAL_CODE,
         });
-        setPhase("needs-registration");
+        await resolveRegistration();
         return;
       } catch {
         // Auto-activation failed. It can fail simply because the wallet became
@@ -157,7 +195,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         try {
           const recheck = await invite.checkWallet(wallet.authority);
           if (recheck.whitelisted) {
-            setPhase("needs-registration");
+            await resolveRegistration();
             return;
           }
         } catch {
@@ -175,7 +213,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       setError(toMessage(e));
       setPhase("needs-invite");
     }
-  }, [client, wallet]);
+  }, [client, wallet, resolveRegistration]);
 
   useEffect(() => {
     void probeStatus();

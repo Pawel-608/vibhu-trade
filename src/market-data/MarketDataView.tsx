@@ -18,6 +18,7 @@ import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { Positions } from "@/trading/Positions";
 import { OpenOrders } from "@/trading/OpenOrders";
+import { TradesHistory } from "@/trading/TradesHistory";
 import { Chart } from "./Chart";
 import { OrderBook } from "./OrderBook";
 import { TradesList } from "./TradesList";
@@ -30,7 +31,7 @@ export interface MarketDataViewProps {
 const TABS = ["Chart", "Order Book", "Trades"] as const;
 type Tab = (typeof TABS)[number];
 
-const DATA_TABS = ["Positions", "Open Orders"] as const;
+const DATA_TABS = ["Positions", "Open Orders", "Trades"] as const;
 type DataTab = (typeof DATA_TABS)[number];
 
 export function MarketDataView({ symbol }: MarketDataViewProps) {
@@ -81,6 +82,7 @@ export function MarketDataView({ symbol }: MarketDataViewProps) {
         </div>
         {dataTab === "Positions" && <Positions symbol={symbol} />}
         {dataTab === "Open Orders" && <OpenOrders symbol={symbol} />}
+        {dataTab === "Trades" && <TradesHistory />}
       </div>
     </div>
   );

@@ -27,6 +27,7 @@ import { useTraderAccount, useMarketSnapshot, TRADER_PDA_INDEX } from "./useTrad
 import { useMarkPrice } from "./useMarkPrice";
 import { useTxAction } from "./useTxAction";
 import { AccountGatePrompt, InlineError } from "./AccountGate";
+import { CollateralActions } from "@/account/CollateralActions";
 import {
   clampLeverage,
   estimateOrder,
@@ -236,6 +237,26 @@ export function OrderEntry({ symbol, initialSide, initialPrice }: OrderEntryProp
     );
   }
 
+  // Account is ready but holds no collateral — no order can be placed yet.
+  // Surface the deposit flow right here in the Trade tab so the user can fund
+  // and trade without hopping over to the Account tab.
+  const hasCollateral =
+    account.view != null &&
+    usdToMicros(account.view.effectiveCollateral.ui) > 0n;
+  if (!hasCollateral) {
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="rounded-lg bg-bg-elevated p-4 text-center">
+          <p className="text-sm font-semibold text-fg">No collateral yet</p>
+          <p className="mt-1 text-xs leading-snug text-fg-muted">
+            Deposit USDC to start trading {symbol}.
+          </p>
+        </div>
+        <CollateralActions onChanged={account.refetch} />
+      </div>
+    );
+  }
+
   const isLong = side === "long";
 
   return (
@@ -284,7 +305,9 @@ export function OrderEntry({ symbol, initialSide, initialPrice }: OrderEntryProp
           className="flex-1"
           options={[
             { value: "cross", label: "Cross" },
-            { value: "isolated", label: "Isolated" },
+            // Isolated margin needs a dedicated on-chain subaccount, which the
+            // app does not create yet — disabled until that ships.
+            { value: "isolated", label: "Isolated (soon)", disabled: true },
           ]}
           value={marginMode}
           onChange={(v) => setMarginMode(v as MarginMode)}
@@ -294,12 +317,6 @@ export function OrderEntry({ symbol, initialSide, initialPrice }: OrderEntryProp
           <span className="font-mono font-semibold text-fg">{leverage}x</span>
         </div>
       </div>
-      {marginMode === "isolated" ? (
-        <p className="-mt-1 text-[10px] leading-snug text-fg-subtle">
-          Isolated margin uses a dedicated subaccount — register one in onboarding.
-          v1 routes orders to your cross-margin account.
-        </p>
-      ) : null}
 
       {/* Leverage slider */}
       <div className="flex items-center gap-3">
@@ -483,7 +500,7 @@ function SegmentedControl<T extends string>({
   onChange,
   className,
 }: {
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; disabled?: boolean }[];
   value: T;
   onChange: (value: T) => void;
   className?: string;
@@ -494,12 +511,17 @@ function SegmentedControl<T extends string>({
         <button
           key={opt.value}
           type="button"
-          onClick={() => onChange(opt.value)}
+          disabled={opt.disabled}
+          onClick={() => {
+            if (!opt.disabled) onChange(opt.value);
+          }}
           className={cn(
             "flex-1 rounded py-1.5 text-xs font-semibold transition-colors",
-            value === opt.value
-              ? "bg-bg-elevated text-fg"
-              : "text-fg-muted active:text-fg",
+            opt.disabled
+              ? "cursor-not-allowed text-fg-subtle opacity-40"
+              : value === opt.value
+                ? "bg-bg-elevated text-fg"
+                : "text-fg-muted active:text-fg",
           )}
         >
           {opt.label}

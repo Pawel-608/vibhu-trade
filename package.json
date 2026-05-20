@@ -18,6 +18,7 @@
     "@solana-program/token": "0.7.0",
     "@solana/kit": "^4.0.0",
     "@tanstack/react-query": "^5.100.11",
+    "@walletconnect/universal-provider": "^2.22.4",
     "clsx": "^2.1.1",
     "lightweight-charts": "^5.2.0",
     "next": "^15.5.4",

@@ -16,6 +16,7 @@
  * OWNED BY: Account agent (`src/account/`).
  */
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWallet } from "@/wallet/WalletProvider";
 import { shortenAddress } from "@/lib/format";
@@ -68,7 +69,45 @@ export function AccountView() {
       </section>
 
       <CollateralActions onChanged={refetch} />
+
+      <LogOutButton />
     </div>
+  );
+}
+
+/* --------------------------------------------------------------------------
+ * Log out
+ * ----------------------------------------------------------------------- */
+
+/**
+ * Disconnects the wallet and clears the Rise session via `useWallet().disconnect()`.
+ * On success `wallet` becomes `null`, so `AccountView` re-renders to the
+ * "connect wallet" empty state.
+ */
+function LogOutButton() {
+  const { disconnect } = useWallet();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogOut = async () => {
+    setIsLoggingOut(true);
+    try {
+      await disconnect();
+    } finally {
+      // `disconnect()` is best-effort and clears state regardless; if it threw
+      // and the view is still mounted, re-enable the button.
+      setIsLoggingOut(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleLogOut}
+      disabled={isLoggingOut}
+      className="w-full rounded-md border border-border py-3 text-sm font-semibold text-fg-muted active:bg-bg-muted disabled:opacity-50"
+    >
+      {isLoggingOut ? "Logging out…" : "Log out"}
+    </button>
   );
 }
 
