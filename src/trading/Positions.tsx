@@ -17,6 +17,7 @@
  */
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { OrderFlags, type Position } from "@ellipsis-labs/rise";
 import { cn } from "@/lib/cn";
 import { CoinIcon } from "@/components/CoinIcon";
@@ -34,12 +35,17 @@ export interface PositionsProps {
 
 export function Positions({ symbol }: PositionsProps) {
   const account = useTraderAccount();
+  const router = useRouter();
 
   if (account.status === "not-connected") {
     return (
       <AccountGatePrompt
         title="No positions"
         detail="Connect a wallet to see your open positions."
+        action={{
+          label: "Connect wallet",
+          onClick: () => router.push("/login"),
+        }}
         className="h-32"
       />
     );
@@ -49,6 +55,10 @@ export function Positions({ symbol }: PositionsProps) {
       <AccountGatePrompt
         title="No positions"
         detail="Set up your Phoenix trader account to start trading."
+        action={{
+          label: "Complete onboarding",
+          onClick: () => router.push("/onboarding"),
+        }}
         className="h-32"
       />
     );

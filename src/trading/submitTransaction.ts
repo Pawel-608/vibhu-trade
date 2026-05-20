@@ -34,6 +34,7 @@ import {
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
   type Blockhash,
+  type Instruction,
   type Transaction,
 } from "@solana/kit";
 import type {
@@ -96,6 +97,34 @@ const DEFAULT_RPC_URL = "/api/rpc";
 const CONFIRM_TIMEOUT_MS = 60_000;
 const CONFIRM_POLL_INTERVAL_MS = 1_500;
 
+/**
+ * Compute-unit limit prepended to every transaction. Account-heavy Phoenix
+ * instructions (opening a position alongside existing ones, brackets,
+ * conditional orders) can exceed the 200k-CU default and fail; the Rust CLI
+ * (`vulcan` — `send_or_dry_run`) raises it the same way. 400k is a safe ceiling.
+ */
+const COMPUTE_UNIT_LIMIT = 400_000;
+
+/** The SPL ComputeBudget program address. */
+const COMPUTE_BUDGET_PROGRAM_ADDRESS = address(
+  "ComputeBudget111111111111111111111111111111",
+);
+
+/**
+ * Build a `SetComputeUnitLimit` ComputeBudget instruction.
+ * Wire format: 1-byte discriminant (`2`) + u32 LE compute-unit limit.
+ */
+function setComputeUnitLimitIx(units: number): Instruction {
+  const data = new Uint8Array(5);
+  data[0] = 2; // SetComputeUnitLimit
+  new DataView(data.buffer).setUint32(1, units, true);
+  return {
+    programAddress: COMPUTE_BUDGET_PROGRAM_ADDRESS,
+    accounts: [],
+    data,
+  };
+}
+
 interface LatestBlockhash {
   blockhash: Blockhash;
   lastValidBlockHeight: bigint;
@@ -127,13 +156,28 @@ async function rpcCall<T>(
   }
   const json = (await response.json()) as {
     result?: T;
-    error?: { message?: string; code?: number };
+    error?: {
+      message?: string;
+      code?: number;
+      data?: { err?: unknown; logs?: string[] };
+    };
   };
   if (json.error) {
+    const { code, message, data } = json.error;
+    // A failed preflight carries the on-chain program logs in `data.logs` —
+    // they pinpoint which instruction / program / account rejected the tx.
+    // The minimal error message alone ("invalid account data for instruction")
+    // is not actionable without them, so dump the full log to the console.
+    if (data?.logs && data.logs.length > 0) {
+      console.error(
+        `[trading] ${method} simulation failed — Solana program logs:\n` +
+          data.logs.join("\n"),
+      );
+    }
     throw new Error(
-      `RPC ${method} error${
-        json.error.code !== undefined ? ` ${json.error.code}` : ""
-      }: ${json.error.message ?? "unknown"}`,
+      `RPC ${method} error${code !== undefined ? ` ${code}` : ""}: ${
+        message ?? "unknown"
+      }${data?.logs?.length ? " (full program logs in the console)" : ""}`,
     );
   }
   return json.result as T;
@@ -253,12 +297,19 @@ export async function submitTransaction(
   const feePayer = address(wallet.authority);
   const latestBlockhash = await getLatestBlockhash(rpcEndpoint, commitment);
 
+  // Prepend a compute-budget instruction so account-heavy Phoenix transactions
+  // do not hit the 200k-CU default and fail (mirrors the Rust CLI).
+  const allIxs: Instruction[] = [
+    setComputeUnitLimitIx(COMPUTE_UNIT_LIMIT),
+    ...(ixs as readonly Instruction[]),
+  ];
+
   // Assemble a v0 transaction message: fee payer + blockhash lifetime + ixs.
   const transactionMessage = pipe(
     createTransactionMessage({ version: 0 }),
     (tx) => setTransactionMessageFeePayer(feePayer, tx),
     (tx) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, tx),
-    (tx) => appendTransactionMessageInstructions(ixs, tx),
+    (tx) => appendTransactionMessageInstructions(allIxs, tx),
   );
 
   // Compile to an unsigned transaction and hand it to the wallet to sign.
@@ -277,7 +328,17 @@ export async function submitTransaction(
 
   const submitted = await rpcCall<string>(rpcEndpoint, "sendTransaction", [
     wire,
-    { encoding: "base64", skipPreflight: false, maxRetries: 3 },
+    {
+      encoding: "base64",
+      skipPreflight: false,
+      // Preflight MUST simulate at the SAME commitment the blockhash was
+      // fetched at (`getLatestBlockhash` above uses `commitment`). The RPC
+      // defaults `preflightCommitment` to "finalized" — ~32 slots behind — so a
+      // "confirmed"-tip blockhash is not yet in the finalized bank and the
+      // simulation fails with "Blockhash not found". Matching them fixes that.
+      preflightCommitment: commitment,
+      maxRetries: 3,
+    },
   ]);
   if (submitted) signature = submitted;
 

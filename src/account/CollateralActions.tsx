@@ -19,12 +19,12 @@
  */
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { usePhoenixClient } from "@/providers/RiseClientProvider";
 import { useWallet } from "@/wallet/WalletProvider";
 import { submitTransaction } from "@/trading/submitTransaction";
 import { cn } from "@/lib/cn";
 import type { Authority } from "@ellipsis-labs/rise";
-import type { UnsignedTransaction } from "@/wallet/types";
 import {
   COLLATERAL_DECIMALS,
   isAmountInputValid,
@@ -48,6 +48,7 @@ export interface CollateralActionsProps {
 export function CollateralActions({ onChanged }: CollateralActionsProps) {
   const client = usePhoenixClient();
   const { wallet } = useWallet();
+  const router = useRouter();
   const connected = !!wallet?.isConnected && !!wallet.authority;
 
   const [mode, setMode] = useState<CollateralMode>("deposit");
@@ -81,35 +82,33 @@ export function CollateralActions({ onChanged }: CollateralActionsProps) {
 
     try {
       const authority = wallet.authority as Authority;
-      // 1. Build the client-signed collateral instruction via the SDK.
-      const ix =
+      // 1. Build the FULL collateral instruction set — NOT the bare
+      //    deposit/withdraw instruction. Phoenix needs the trader's canonical
+      //    (PhUSD) token account created and the Ember leg included; the bare
+      //    instruction on its own fails preflight with "invalid account data"
+      //    because that token account does not exist yet. `buildDepositIxs`
+      //    returns [createPhoenixAta, emberDeposit, depositFunds];
+      //    `buildWithdrawIxs` returns the matching create-ATA / approve /
+      //    withdraw / ember set.
+      const flow =
         mode === "deposit"
-          ? await client.ixs.buildDepositFunds({
+          ? await client.ixs.buildDepositIxs({
               authority,
               amount: parsedAmount,
               traderPdaIndex: DEFAULT_PDA_INDEX,
             })
-          : await client.ixs.buildWithdrawFunds({
+          : await client.ixs.buildWithdrawIxs({
               authority,
               amount: parsedAmount,
               traderPdaIndex: DEFAULT_PDA_INDEX,
             });
 
-      // 2. Submit via the Trading agent's shared pipeline (CONTRACTS §4):
-      //    assemble -> sign with the wallet -> submit -> confirm.
-      //
-      // VERIFY: contract mismatch with Trading. `submitTransaction`'s
-      // `transaction` param is typed `UnsignedTransaction` (a *compiled*
-      // `@solana/kit` Transaction), but its own docstring says the pipeline
-      // *starts* by building instructions with `client.ixs`. `buildDepositFunds`
-      // /`buildWithdrawFunds` return raw instructions, not a compiled tx. We
-      // pass the built instruction(s) here and cast at the boundary; the
-      // Trading agent must reconcile `submitTransaction` to accept instruction
-      // input (or expose an `assembleTransaction` helper) for this flow to run.
+      // 2. Submit the whole instruction set via the shared pipeline
+      //    (assemble -> sign with the wallet -> submit -> confirm).
       const result = await submitTransaction({
         client,
         wallet,
-        transaction: ix as unknown as UnsignedTransaction,
+        instructions: flow.instructions,
       });
 
       setPhase({
@@ -205,26 +204,31 @@ export function CollateralActions({ onChanged }: CollateralActionsProps) {
           ) : null}
         </div>
 
-        {/* Submit. */}
-        <button
-          type="button"
-          disabled={!connected || !amountValid || busy}
-          onClick={handleSubmit}
-          className={cn(
-            "flex h-12 items-center justify-center rounded-md text-sm font-semibold transition-opacity",
-            mode === "deposit"
-              ? "bg-accent text-accent-fg"
-              : "border border-border bg-transparent text-fg",
-            (!connected || !amountValid || busy) &&
-              "cursor-not-allowed opacity-40",
-          )}
-        >
-          {busy
-            ? `${actionLabel}ing…`
-            : connected
-              ? `${actionLabel} Collateral`
-              : "Connect wallet to continue"}
-        </button>
+        {/* Submit — or a connect-wallet button when no wallet is attached. */}
+        {connected ? (
+          <button
+            type="button"
+            disabled={!amountValid || busy}
+            onClick={handleSubmit}
+            className={cn(
+              "flex h-12 items-center justify-center rounded-md text-sm font-semibold transition-opacity",
+              mode === "deposit"
+                ? "bg-accent text-accent-fg"
+                : "border border-border bg-transparent text-fg",
+              (!amountValid || busy) && "cursor-not-allowed opacity-40",
+            )}
+          >
+            {busy ? `${actionLabel}ing…` : `${actionLabel} Collateral`}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => router.push("/login")}
+            className="flex h-12 items-center justify-center rounded-md bg-accent text-sm font-semibold text-accent-fg transition-opacity active:opacity-80"
+          >
+            Connect wallet
+          </button>
+        )}
 
         {/* Tx feedback. */}
         <TxFeedback phase={phase} />

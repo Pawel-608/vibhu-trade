@@ -23,19 +23,17 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Phoenix Mobile",
+  title: "Vibhu",
   description: "Mobile-first trading for Phoenix perpetual futures.",
   manifest: "/manifest.webmanifest",
-  applicationName: "Phoenix Mobile",
+  applicationName: "Vibhu",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Phoenix Mobile",
+    title: "Vibhu",
   },
-  icons: {
-    icon: "/icons/icon-192.png",
-    apple: "/icons/icon-192.png",
-  },
+  // Favicon + apple-touch-icon come from the file convention — `app/icon.svg`
+  // and `app/apple-icon.svg` (the Vibhu mark).
 };
 
 export const viewport: Viewport = {

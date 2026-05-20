@@ -81,13 +81,40 @@ interface WindowAppReadyEventApi {
   register(...wallets: StandardWallet[]): void;
 }
 
-/** Module-level registry of discovered wallets (deduped by name). */
+/**
+ * Module-level registry of discovered wallets, keyed by wallet name. Only
+ * Solana-capable wallets are stored — see `registerWallets`.
+ */
 const registry = new Map<string, StandardWallet>();
 let initialized = false;
 
+/**
+ * True when a registered wallet can actually be used for Solana: it lists a
+ * `solana:` chain and exposes the message- and transaction-signing features.
+ *
+ * This matters because multi-chain wallets (Phantom, Backpack, …) register a
+ * SEPARATE Wallet Standard object per chain — Solana, Bitcoin, Sui, EVM —
+ * all sharing the same `name`. Without this check the name-keyed registry
+ * lets a non-Solana sibling clobber the Solana object, and the wallet then
+ * silently disappears from the picker.
+ */
+function isSolanaCapable(wallet: StandardWallet): boolean {
+  return (
+    Array.isArray(wallet.chains) &&
+    wallet.chains.some(
+      (c) => typeof c === "string" && c.startsWith("solana:"),
+    ) &&
+    FEATURE_SIGN_MESSAGE in wallet.features &&
+    FEATURE_SIGN_TRANSACTION in wallet.features
+  );
+}
+
 function registerWallets(wallets: readonly StandardWallet[]): void {
   for (const wallet of wallets) {
-    if (wallet && typeof wallet.name === "string") {
+    // Only Solana-capable wallets enter the registry. This also stops a
+    // multi-chain wallet's Bitcoin/Sui/EVM siblings from overwriting its
+    // Solana entry under their shared name (see `isSolanaCapable`).
+    if (wallet && typeof wallet.name === "string" && isSolanaCapable(wallet)) {
       registry.set(wallet.name, wallet);
     }
   }
@@ -125,12 +152,8 @@ function ensureInitialized(): void {
 /** Returns every discovered Solana-capable Wallet Standard wallet. */
 export function getSolanaWallets(): StandardWallet[] {
   ensureInitialized();
-  return [...registry.values()].filter(
-    (w) =>
-      w.chains.some((c) => c.startsWith("solana:")) &&
-      FEATURE_SIGN_MESSAGE in w.features &&
-      FEATURE_SIGN_TRANSACTION in w.features,
-  );
+  // The registry only ever holds Solana-capable wallets (see `registerWallets`).
+  return [...registry.values()];
 }
 
 function feature<T>(wallet: StandardWallet, id: string): T {

@@ -14,6 +14,7 @@
  * OWNED BY: Trading agent (`src/trading/`).
  */
 
+import { useRouter } from "next/navigation";
 import { Side, symbol as toSymbol, type LimitOrder } from "@ellipsis-labs/rise";
 import { cn } from "@/lib/cn";
 import { CoinIcon } from "@/components/CoinIcon";
@@ -38,12 +39,17 @@ export function OpenOrders({ symbol }: OpenOrdersProps) {
   const { wallet } = useWallet();
   const account = useTraderAccount();
   const tx = useTxAction();
+  const router = useRouter();
 
   if (account.status === "not-connected") {
     return (
       <AccountGatePrompt
         title="No open orders"
         detail="Connect a wallet to see your resting orders."
+        action={{
+          label: "Connect wallet",
+          onClick: () => router.push("/login"),
+        }}
         className="h-28"
       />
     );
@@ -53,6 +59,10 @@ export function OpenOrders({ symbol }: OpenOrdersProps) {
       <AccountGatePrompt
         title="No open orders"
         detail="Set up your Phoenix trader account to start trading."
+        action={{
+          label: "Complete onboarding",
+          onClick: () => router.push("/onboarding"),
+        }}
         className="h-28"
       />
     );

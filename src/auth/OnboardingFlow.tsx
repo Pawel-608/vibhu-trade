@@ -7,9 +7,11 @@
  * flow has two steps:
  *
  *   Step 1 — Invite activation.
- *     `client.api.invite().checkWallet(authority)` reports whether the wallet is
- *     whitelisted. If not, the user enters an access code or referral code and
- *     we call `activateInvite` / `activateInviteWithReferral`.
+ *     `checkWallet(authority)` first reports whether the wallet is already
+ *     whitelisted — if so this step is skipped. Otherwise the app's referral
+ *     code is applied automatically via `activateInviteWithReferral`. Only if
+ *     that auto-activation fails does the manual code form appear, letting the
+ *     user enter their own access or referral code.
  *
  *   Step 2 — Trader registration.
  *     `client.ixs.buildRegisterTrader({ authority, marginType: Cross })` builds
@@ -33,8 +35,10 @@ import { submitTransaction } from "@/trading/submitTransaction";
 import { tradeRoute } from "@/lib/constants";
 
 /**
- * Referral code applied to new-account invite activation, so accounts created
- * through this app are credited to our referral. Overridable via env.
+ * Referral code applied AUTOMATICALLY on first onboarding (see `probeStatus`),
+ * so accounts created through this app are credited to our referral. The user
+ * only sees the manual code form if this auto-activation fails. Overridable via
+ * the `NEXT_PUBLIC_PHOENIX_REFERRAL_CODE` env var.
  */
 const PHOENIX_REFERRAL_CODE =
   process.env.NEXT_PUBLIC_PHOENIX_REFERRAL_CODE ?? "GZNNNBK5";
@@ -76,10 +80,10 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
   const [phase, setPhase] = useState<Phase>("checking");
   const [error, setError] = useState<string | null>(null);
-  // Default to the referral path, pre-filled with our referral code, so a new
-  // user just taps "Activate invite" and the account is credited to us.
+  // The manual code form is only shown as a FALLBACK — when auto-activation
+  // with our referral code fails — so it starts empty for the user's own code.
   const [codeMode, setCodeMode] = useState<CodeMode>("referral");
-  const [code, setCode] = useState(PHOENIX_REFERRAL_CODE);
+  const [code, setCode] = useState("");
 
   const finish = useCallback(() => {
     if (onComplete) onComplete();
@@ -129,14 +133,45 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     setError(null);
     setPhase("checking");
     try {
-      const status = await client.api.invite().checkWallet(wallet.authority);
-      if (!status.whitelisted) {
-        setPhase("needs-invite");
+      const invite = client.api.invite();
+
+      // 1. Already whitelisted? Skip invite activation entirely.
+      const status = await invite.checkWallet(wallet.authority);
+      if (status.whitelisted) {
+        setPhase("needs-registration");
         return;
       }
-      // Whitelisted — move to (or past) registration.
-      setPhase("needs-registration");
+
+      // 2. Not whitelisted — apply the app's referral code automatically.
+      try {
+        await invite.activateInviteWithReferral({
+          authority: wallet.authority,
+          referral_code: PHOENIX_REFERRAL_CODE,
+        });
+        setPhase("needs-registration");
+        return;
+      } catch {
+        // Auto-activation failed. It can fail simply because the wallet became
+        // whitelisted in the meantime (a concurrent attempt, or a prior run) —
+        // so re-check before giving up.
+        try {
+          const recheck = await invite.checkWallet(wallet.authority);
+          if (recheck.whitelisted) {
+            setPhase("needs-registration");
+            return;
+          }
+        } catch {
+          // Ignore — fall through to manual entry.
+        }
+        // 3. Genuinely could not auto-activate — let the user enter their own
+        //    access or referral code.
+        setError(
+          "We couldn't activate your invite automatically. Enter your own access or referral code to continue.",
+        );
+        setPhase("needs-invite");
+      }
     } catch (e) {
+      // `checkWallet` itself failed — fall back to manual entry.
       setError(toMessage(e));
       setPhase("needs-invite");
     }
@@ -256,7 +291,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
               onClick={() => router.replace("/login")}
               className="rounded-md bg-accent px-5 py-3 text-sm font-semibold text-accent-fg active:opacity-80"
             >
-              Go to login
+              Connect wallet
             </button>
           </Centered>
         ) : null}
@@ -285,7 +320,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
                 active={codeMode === "referral"}
                 onClick={() => {
                   setCodeMode("referral");
-                  setCode(PHOENIX_REFERRAL_CODE);
+                  setCode("");
                 }}
               >
                 Referral code

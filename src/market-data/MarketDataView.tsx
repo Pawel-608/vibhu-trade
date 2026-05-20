@@ -14,6 +14,7 @@
  */
 
 import { useState } from "react";
+import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { Positions } from "@/trading/Positions";
 import { OpenOrders } from "@/trading/OpenOrders";
@@ -38,6 +39,17 @@ export function MarketDataView({ symbol }: MarketDataViewProps) {
 
   return (
     <div className="flex flex-col gap-4 p-3">
+      {/* Live trading-challenge entry point */}
+      <Link
+        href="/competition"
+        className="flex items-center justify-between gap-2 rounded-lg border border-accent/40 bg-accent-bg px-3 py-2 active:opacity-80"
+      >
+        <span className="text-xs font-medium text-fg">
+          <span aria-hidden>🏆</span> Vibhu vs Drew — live challenge
+        </span>
+        <span className="text-sm leading-none text-accent">›</span>
+      </Link>
+
       {/* Live market stats */}
       <MarketStatsStrip symbol={symbol} />
 
