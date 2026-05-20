@@ -1,0 +1,100 @@
+"use client";
+
+/**
+ * MarketDataView — the "Markets" bottom-nav view of the trade screen.
+ *
+ * Composes a market-stats strip, a Chart / Order Book / Trades tab switcher,
+ * and a data row that toggles between the Trading agent's `Positions` and
+ * `OpenOrders` panels (imported from `@/trading/*` — sanctioned cross-feature
+ * import per CONTRACTS §4).
+ *
+ * Owns only layout + tab state; all data lives in the child components.
+ *
+ * OWNED BY: Market Data agent (`src/market-data/`).
+ */
+
+import { useState } from "react";
+import { cn } from "@/lib/cn";
+import { Positions } from "@/trading/Positions";
+import { OpenOrders } from "@/trading/OpenOrders";
+import { Chart } from "./Chart";
+import { OrderBook } from "./OrderBook";
+import { TradesList } from "./TradesList";
+import { MarketStatsStrip } from "./MarketStatsStrip";
+
+export interface MarketDataViewProps {
+  symbol: string;
+}
+
+const TABS = ["Chart", "Order Book", "Trades"] as const;
+type Tab = (typeof TABS)[number];
+
+const DATA_TABS = ["Positions", "Open Orders"] as const;
+type DataTab = (typeof DATA_TABS)[number];
+
+export function MarketDataView({ symbol }: MarketDataViewProps) {
+  const [tab, setTab] = useState<Tab>("Chart");
+  const [dataTab, setDataTab] = useState<DataTab>("Positions");
+
+  return (
+    <div className="flex flex-col gap-4 p-3">
+      {/* Live market stats */}
+      <MarketStatsStrip symbol={symbol} />
+
+      {/* Chart / Order Book / Trades switcher */}
+      <div className="flex gap-5 border-b border-border">
+        {TABS.map((t) => (
+          <UnderlineTab key={t} active={tab === t} onClick={() => setTab(t)}>
+            {t}
+          </UnderlineTab>
+        ))}
+      </div>
+
+      {tab === "Chart" && <Chart symbol={symbol} />}
+      {tab === "Order Book" && <OrderBook symbol={symbol} />}
+      {tab === "Trades" && <TradesList symbol={symbol} />}
+
+      {/* Data row — Positions / Open Orders (owned by the Trading agent) */}
+      <div className="flex flex-col gap-3">
+        <div className="flex gap-5 border-b border-border">
+          {DATA_TABS.map((t) => (
+            <UnderlineTab
+              key={t}
+              active={dataTab === t}
+              onClick={() => setDataTab(t)}
+            >
+              {t}
+            </UnderlineTab>
+          ))}
+        </div>
+        {dataTab === "Positions" && <Positions symbol={symbol} />}
+        {dataTab === "Open Orders" && <OpenOrders symbol={symbol} />}
+      </div>
+    </div>
+  );
+}
+
+function UnderlineTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "-mb-px border-b-2 pb-2 text-xs font-medium transition-colors",
+        active
+          ? "border-accent text-fg"
+          : "border-transparent text-fg-muted active:text-fg",
+      )}
+    >
+      {children}
+    </button>
+  );
+}

@@ -1,0 +1,53 @@
+{
+  "name": "phoenix-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mobile-first PWA for trading Phoenix perpetual futures",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ellipsis-labs/rise": "^0.4.9",
+    "@privy-io/react-auth": "^3.26.1",
+    "@solana-program/memo": "0.8.0",
+    "@solana-program/system": "0.8.1",
+    "@solana-program/token": "0.7.0",
+    "@solana/kit": "^4.0.0",
+    "@tanstack/react-query": "^5.100.11",
+    "clsx": "^2.1.1",
+    "lightweight-charts": "^5.2.0",
+    "next": "^15.5.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-window": "^1.8.11",
+    "tailwind-merge": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/react-window": "^1.8.8",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^9.18.0",
+    "eslint-config-next": "^15.5.4",
+    "postcss": "^8.5.10",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "@solana-program/memo": {
+      "@solana/kit": "$@solana/kit"
+    },
+    "@solana-program/system": {
+      "@solana/kit": "$@solana/kit"
+    },
+    "@solana-program/token": {
+      "@solana/kit": "$@solana/kit"
+    }
+  }
+}
