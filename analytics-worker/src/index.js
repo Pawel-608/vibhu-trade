@@ -21,6 +21,7 @@
 const ALLOWED_ORIGINS = new Set([
   "https://vibhu.trade",
   "https://www.vibhu.trade",
+  "https://phoenix-mobile.solanaquaymarkets.workers.dev",
   "http://localhost:3000",
   "http://localhost:3001",
 ]);
