@@ -116,6 +116,9 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
   // A wallet is injected -> we're in its in-app browser (or a desktop with the
   // extension). Otherwise, on mobile, offer the deeplinks into a wallet app.
   const hasInjectedWallet = externalWallets.length > 0;
+  // Inside a wallet's own in-app browser (mobile + injected wallet) social
+  // login is pointless. On desktop it stays, even with an extension present.
+  const inWalletBrowser = isMobile && hasInjectedWallet;
   const walletLinks =
     isMobile && !hasInjectedWallet ? walletBrowserLinks() : null;
 
@@ -150,23 +153,28 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
           </button>
         ) : PRIVY_ENABLED ? (
           <>
-            {/* Social login is hidden when a wallet is already injected (a
-                wallet's in-app browser) — offering a fresh embedded wallet
-                there makes no sense; just connect the wallet you're in. */}
-            {!hasInjectedWallet ? (
+            {/* Social login: hidden only inside a wallet's in-app browser,
+                where offering a fresh embedded wallet makes no sense. Shown
+                on desktop even when an extension is present. */}
+            {!inWalletBrowser ? (
               <button
                 type="button"
                 disabled={isConnecting}
                 onClick={() => void handlePrivy()}
                 className="w-full rounded-md bg-accent py-4 text-sm font-semibold text-accent-fg shadow-glow active:opacity-80 disabled:opacity-40"
               >
-                {pending === PRIVY_METHOD ? "Connecting…" : "Sign in"}
+                {pending === PRIVY_METHOD
+                  ? "Connecting…"
+                  : "Sign in with Privy"}
               </button>
             ) : null}
 
             {/* Injected wallet(s) — connect directly via the Wallet Standard. */}
             {hasInjectedWallet ? (
               <>
+                {!inWalletBrowser ? (
+                  <Divider label="or connect your wallet" />
+                ) : null}
                 {externalWallets.map((w) => (
                   <button
                     key={w.name}
@@ -236,9 +244,9 @@ export function LoginScreen({ onAuthenticated }: LoginScreenProps) {
         )}
 
         <p className="px-2 text-center text-[11px] leading-snug text-fg-subtle">
-          {hasInjectedWallet
+          {inWalletBrowser
             ? "Connect your wallet to start trading on Vibhu."
-            : "Sign in to create or access your secure Solana wallet — no browser extension or seed phrase needed."}
+            : "Privy sign-in creates a secure embedded Solana wallet — no browser extension or seed phrase needed."}
         </p>
       </div>
     </main>

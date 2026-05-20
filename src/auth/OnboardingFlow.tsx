@@ -35,13 +35,17 @@ import { submitTransaction } from "@/trading/submitTransaction";
 import { tradeRoute } from "@/lib/constants";
 
 /**
- * Referral code applied AUTOMATICALLY on first onboarding (see `probeStatus`),
- * so accounts created through this app are credited to our referral. The user
- * only sees the manual code form if this auto-activation fails. Overridable via
- * the `NEXT_PUBLIC_PHOENIX_REFERRAL_CODE` env var.
+ * Referral codes applied AUTOMATICALLY on first onboarding (see `probeStatus`),
+ * tried IN ORDER — so a disabled/exhausted primary fails over to the next.
+ * Accounts created through this app are credited to whichever code takes; the
+ * user only sees the manual code form if every code fails. The primary is
+ * overridable via the `NEXT_PUBLIC_PHOENIX_REFERRAL_CODE` env var; `VIBHU` is
+ * the failover.
  */
-const PHOENIX_REFERRAL_CODE =
-  process.env.NEXT_PUBLIC_PHOENIX_REFERRAL_CODE ?? "GZNNNBK5";
+const PHOENIX_REFERRAL_CODES = [
+  process.env.NEXT_PUBLIC_PHOENIX_REFERRAL_CODE ?? "GZNNNBK5",
+  "VIBHU",
+];
 
 export interface OnboardingFlowProps {
   /** Called once the trader is registered & ready. Defaults to routing to the trade screen. */
@@ -180,34 +184,38 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         return;
       }
 
-      // 2. Not whitelisted — apply the app's referral code automatically.
-      try {
-        await invite.activateInviteWithReferral({
-          authority: wallet.authority,
-          referral_code: PHOENIX_REFERRAL_CODE,
-        });
-        await resolveRegistration();
-        return;
-      } catch {
-        // Auto-activation failed. It can fail simply because the wallet became
-        // whitelisted in the meantime (a concurrent attempt, or a prior run) —
-        // so re-check before giving up.
+      // 2. Not whitelisted — auto-apply the app's referral codes in order, so
+      //    a disabled/exhausted primary fails over to the next.
+      for (const referralCode of PHOENIX_REFERRAL_CODES) {
         try {
-          const recheck = await invite.checkWallet(wallet.authority);
-          if (recheck.whitelisted) {
-            await resolveRegistration();
-            return;
-          }
+          await invite.activateInviteWithReferral({
+            authority: wallet.authority,
+            referral_code: referralCode,
+          });
+          await resolveRegistration();
+          return;
         } catch {
-          // Ignore — fall through to manual entry.
+          // This code did not take (exhausted, disabled, or the wallet already
+          // has a referral) — fall through and try the next one.
         }
-        // 3. Genuinely could not auto-activate — let the user enter their own
-        //    access or referral code.
-        setError(
-          "We couldn't activate your invite automatically. Enter your own access or referral code to continue.",
-        );
-        setPhase("needs-invite");
       }
+
+      // 3. No referral code took. The wallet may still have become whitelisted
+      //    in the meantime (a concurrent attempt, or a prior run) — re-check
+      //    before falling back to manual entry.
+      try {
+        const recheck = await invite.checkWallet(wallet.authority);
+        if (recheck.whitelisted) {
+          await resolveRegistration();
+          return;
+        }
+      } catch {
+        // Ignore — fall through to manual entry.
+      }
+      setError(
+        "We couldn't activate your invite automatically. Enter your own access or referral code to continue.",
+      );
+      setPhase("needs-invite");
     } catch (e) {
       // `checkWallet` itself failed — fall back to manual entry.
       setError(toMessage(e));
