@@ -1,0 +1,16 @@
+{
+  // Cloudflare Workers deployment for the Vibhu / phoenix-mobile Next.js app,
+  // built through the OpenNext adapter (see open-next.config.ts).
+  //
+  // `name` MUST match the Worker your Cloudflare project deploys to — verify it
+  // in the Cloudflare dashboard (Workers & Pages) and adjust if it differs.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "phoenix-mobile",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-03-25",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": ".open-next/assets"
+  }
+}
