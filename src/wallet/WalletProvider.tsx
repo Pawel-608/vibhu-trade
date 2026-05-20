@@ -59,6 +59,7 @@ import {
   useSignTransaction as useSolanaSignTransaction,
   useSignMessage as useSolanaSignMessage,
   useCreateWallet as useCreateSolanaWallet,
+  useExportWallet as useSolanaExportWallet,
   type ConnectedStandardSolanaWallet,
   type UseSignTransaction,
   type UseSignMessage,
@@ -66,6 +67,7 @@ import {
 import type { AuthSession, PhoenixClient } from "@ellipsis-labs/rise";
 import { usePhoenixClient } from "@/providers/RiseClientProvider";
 import { PRIVY_ENABLED } from "@/lib/constants";
+import { trackWalletConnect } from "@/lib/analytics";
 import type {
   AppWallet,
   ExternalWalletOption,
@@ -299,10 +301,17 @@ function PrivyWalletProvider({ children }: { children: ReactNode }) {
   const { signTransaction } = useSolanaSignTransaction();
   const { signMessage } = useSolanaSignMessage();
   const { createWallet } = useCreateSolanaWallet();
+  const { exportWallet } = useSolanaExportWallet();
 
   const [wallet, setWallet] = useState<AppWallet | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const externalWallets = useDiscoveredWallets();
+
+  // Record a wallet-connect analytics event when a wallet first attaches.
+  // Fire-and-forget — never affects the connect flow.
+  useEffect(() => {
+    if (wallet) trackWalletConnect(wallet);
+  }, [wallet]);
 
   // Privy creates the embedded wallet asynchronously after login, so the
   // `solanaWallets` array changes across renders. `connectPrivy` polls for it;
@@ -442,6 +451,17 @@ function PrivyWalletProvider({ children }: { children: ReactNode }) {
     setWallet(null);
   }, [client, authenticated, logout]);
 
+  const exportPrivateKey = useCallback(async () => {
+    if (!wallet || wallet.kind !== "privy-embedded") {
+      throw new Error(
+        "Key export is only available for the Privy embedded wallet.",
+      );
+    }
+    // Opens Privy's secure export modal — the raw key is shown only inside
+    // Privy's iframe and never passes through app code. Resolves on close.
+    await exportWallet({ address: wallet.authority });
+  }, [wallet, exportWallet]);
+
   const value = useMemo<WalletContextValue>(
     () => ({
       wallet,
@@ -450,6 +470,7 @@ function PrivyWalletProvider({ children }: { children: ReactNode }) {
       connectExternal,
       externalWallets,
       disconnect,
+      exportPrivateKey,
     }),
     [
       wallet,
@@ -458,6 +479,7 @@ function PrivyWalletProvider({ children }: { children: ReactNode }) {
       connectExternal,
       externalWallets,
       disconnect,
+      exportPrivateKey,
     ],
   );
 
@@ -513,6 +535,12 @@ function ExternalOnlyWalletProvider({ children }: { children: ReactNode }) {
   const [wallet, setWallet] = useState<AppWallet | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const externalWallets = useDiscoveredWallets();
+
+  // Record a wallet-connect analytics event when a wallet first attaches.
+  // Fire-and-forget — never affects the connect flow.
+  useEffect(() => {
+    if (wallet) trackWalletConnect(wallet);
+  }, [wallet]);
   const activeWallet = useRef<StandardWallet | null>(null);
 
   const connectExternal = useCallback(
@@ -551,6 +579,12 @@ function ExternalOnlyWalletProvider({ children }: { children: ReactNode }) {
     setWallet(null);
   }, [client]);
 
+  const exportPrivateKey = useCallback(async () => {
+    throw new Error(
+      "Private-key export is only available for the embedded wallet.",
+    );
+  }, []);
+
   const value = useMemo<WalletContextValue>(
     () => ({
       wallet,
@@ -559,6 +593,7 @@ function ExternalOnlyWalletProvider({ children }: { children: ReactNode }) {
       connectExternal,
       externalWallets,
       disconnect,
+      exportPrivateKey,
     }),
     [
       wallet,
@@ -567,6 +602,7 @@ function ExternalOnlyWalletProvider({ children }: { children: ReactNode }) {
       connectExternal,
       externalWallets,
       disconnect,
+      exportPrivateKey,
     ],
   );
 

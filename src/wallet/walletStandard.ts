@@ -165,17 +165,20 @@ function feature<T>(wallet: StandardWallet, id: string): T {
 }
 
 /**
- * Connect to a wallet and return its primary Solana account. Triggers the
- * wallet's approval prompt when not already authorized.
+ * Connect to a wallet and return its primary Solana account.
+ *
+ * Always calls the wallet's `connect()` — it never trusts the pre-populated
+ * `wallet.accounts`. On page load a wallet may AUTO-CONNECT a stale account
+ * (the one this dapp last used) even though the user has since switched their
+ * active account. Signing then happens with the *active* account, so a nonce
+ * fetched for the stale address fails signature verification on the Phoenix
+ * backend (`invalid_wallet_signature`). `connect()` returns the wallet's
+ * current account — the same one it will sign with — and is silent (no prompt)
+ * for an already-authorized dapp.
  */
 export async function connectWallet(
   wallet: StandardWallet,
 ): Promise<StandardWalletAccount> {
-  const existing = wallet.accounts.find((a) =>
-    a.chains.some((c) => c.startsWith("solana:")),
-  );
-  if (existing) return existing;
-
   const connect = feature<ConnectFeature>(wallet, FEATURE_CONNECT);
   const { accounts } = await connect.connect();
   const account = accounts.find((a) =>

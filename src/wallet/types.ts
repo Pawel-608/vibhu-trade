@@ -99,4 +99,12 @@ export interface WalletContextValue {
 
   /** Disconnect the wallet and clear the Rise session. */
   disconnect(): Promise<void>;
+
+  /**
+   * Open Privy's secure modal to reveal the embedded wallet's private key.
+   * Only meaningful for `wallet.kind === "privy-embedded"` — rejects for an
+   * external wallet (those manage their own keys). The raw key is shown only
+   * inside Privy's iframe; it never passes through app code.
+   */
+  exportPrivateKey(): Promise<void>;
 }
