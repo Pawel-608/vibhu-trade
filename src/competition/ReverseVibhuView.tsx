@@ -5,8 +5,7 @@
  *
  * Visualizes a hypothetical strategy that takes the EXACT OPPOSITE side of
  * every one of Vibhu's fills (see `useReverseVibhu`). Renders a summary, a
- * key-insight callout (the one tail trade that drives nearly all the gain),
- * a per-trade table with a running index, a cumulative sparkline, and a
+ * cumulative sparkline, a per-trade table with a running index, and a
  * per-market reverted breakdown.
  *
  * Standalone, public view — no wallet/login needed. Data is live via
@@ -95,12 +94,6 @@ function ReverseBody({ data }: { data: ReverseVibhuData }) {
     <>
       <Summary data={data} />
       <Sparkline trades={data.trades} startUsd={data.startUsd} />
-      {data.keyInsight && (
-        <KeyInsightCallout
-          insight={data.keyInsight}
-          netPnl={data.netPnl}
-        />
-      )}
       <TradeTable trades={data.trades} />
       <MarketBreakdown markets={data.markets} />
       <p className="px-1 pb-4 text-center text-[10px] leading-relaxed text-fg-subtle">
@@ -266,62 +259,6 @@ function Sparkline({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Key-insight callout                                                        */
-/* -------------------------------------------------------------------------- */
-
-function KeyInsightCallout({
-  insight,
-  netPnl,
-}: {
-  insight: NonNullable<ReverseVibhuData["keyInsight"]>;
-  netPnl: number;
-}) {
-  const { trade, indexBefore } = insight;
-  const share =
-    netPnl !== 0 ? (trade.revertedPnl / netPnl) * 100 : 0;
-
-  return (
-    <section className="flex flex-col gap-2 rounded-xl border border-accent/50 bg-accent-bg p-4">
-      <span className="text-[10px] font-medium uppercase tracking-wide text-accent">
-        Key insight — it&apos;s one trade
-      </span>
-      <p className="text-xs leading-relaxed text-fg">
-        Right before fading Vibhu&apos;s single biggest trade, the Reverse Index
-        sat at{" "}
-        <span className="font-mono font-semibold tabular-nums text-fg">
-          {fmtUsd(indexBefore)}
-        </span>
-        . Fading that one{" "}
-        <span className="font-medium text-fg">{trade.marketSymbol}</span>{" "}
-        fill — where he realized{" "}
-        <span
-          className={cn(
-            "font-mono tabular-nums",
-            pnlColor(trade.hisRealizedPnl),
-          )}
-        >
-          {fmtUsd(trade.hisRealizedPnl, { sign: true })}
-        </span>{" "}
-        — added{" "}
-        <span className="font-mono font-semibold tabular-nums text-up">
-          {fmtUsd(trade.revertedPnl, { sign: true })}
-        </span>{" "}
-        on its own.
-      </p>
-      <p className="text-[11px] leading-relaxed text-fg-muted">
-        That is{" "}
-        <span className="font-mono font-semibold tabular-nums text-fg">
-          {Math.abs(share).toFixed(0)}%
-        </span>{" "}
-        of the entire result. Almost the whole &ldquo;edge&rdquo; of fading
-        Vibhu is a single tail trade — strip it out and the strategy barely
-        moves.
-      </p>
-    </section>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
 /* Per-trade table                                                            */
 /* -------------------------------------------------------------------------- */
 
@@ -329,7 +266,7 @@ function TradeTable({ trades }: { trades: ReverseTrade[] }) {
   return (
     <section className="flex flex-col gap-2">
       <span className="px-1 text-[10px] font-medium uppercase tracking-wide text-fg-subtle">
-        Per-trade — oldest first
+        Per-trade
       </span>
       <div className="overflow-x-auto rounded-xl border border-border bg-bg-elevated no-scrollbar">
         <table className="w-full min-w-[480px] border-collapse text-xs">
@@ -345,7 +282,8 @@ function TradeTable({ trades }: { trades: ReverseTrade[] }) {
             </tr>
           </thead>
           <tbody>
-            {trades.map((t) => (
+            {/* Computed oldest-first (running index); displayed newest-first. */}
+            {[...trades].reverse().map((t) => (
               <tr
                 key={t.index}
                 className="border-b border-border/60 last:border-0"
