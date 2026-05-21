@@ -24,6 +24,16 @@ export function PrivyAuthProvider({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
+  // Privy REQUIRES a cluster config for solana:mainnet — without one it throws
+  // "No RPC configuration found for chain solana:mainnet" and crashes the app.
+  // Prefer NEXT_PUBLIC_SOLANA_RPC_URL; otherwise route through the same-origin
+  // /api/rpc proxy (forwards to Solana Vibe Station, api_key stays server-side).
+  const solanaRpcUrl =
+    SOLANA_RPC_URL ||
+    (typeof window !== "undefined"
+      ? `${window.location.origin}/api/rpc`
+      : null);
+
   return (
     <PrivyProvider
       appId={PRIVY_APP_ID}
@@ -40,12 +50,12 @@ export function PrivyAuthProvider({ children }: { children: ReactNode }) {
             createOnLogin: "users-without-wallets",
           },
         },
-        // Solana RPC for embedded-wallet operations. Empty string -> Privy
-        // default cluster RPC; set NEXT_PUBLIC_SOLANA_RPC_URL in production.
-        ...(SOLANA_RPC_URL
+        // Solana RPC for embedded-wallet operations — see `solanaRpcUrl`
+        // above. Always present on the client so Privy never crashes.
+        ...(solanaRpcUrl
           ? {
               solanaClusters: [
-                { name: "mainnet-beta" as const, rpcUrl: SOLANA_RPC_URL },
+                { name: "mainnet-beta" as const, rpcUrl: solanaRpcUrl },
               ],
             }
           : {}),
