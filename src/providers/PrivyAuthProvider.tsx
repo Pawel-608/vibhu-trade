@@ -14,7 +14,8 @@
 
 import type { ReactNode } from "react";
 import { PrivyProvider } from "@privy-io/react-auth";
-import { PRIVY_APP_ID, PRIVY_ENABLED, SOLANA_RPC_URL } from "@/lib/constants";
+import { createSolanaRpc, createSolanaRpcSubscriptions } from "@solana/kit";
+import { PRIVY_APP_ID, PRIVY_ENABLED } from "@/lib/constants";
 
 export function PrivyAuthProvider({ children }: { children: ReactNode }) {
   // No app ID configured -> skip Privy entirely. The app still runs on the
@@ -24,15 +25,31 @@ export function PrivyAuthProvider({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  // Privy REQUIRES a cluster config for solana:mainnet — without one it throws
-  // "No RPC configuration found for chain solana:mainnet" and crashes the app.
-  // Prefer NEXT_PUBLIC_SOLANA_RPC_URL; otherwise route through the same-origin
-  // /api/rpc proxy (forwards to Solana Vibe Station, api_key stays server-side).
-  const solanaRpcUrl =
-    SOLANA_RPC_URL ||
-    (typeof window !== "undefined"
-      ? `${window.location.origin}/api/rpc`
-      : null);
+  // Privy v3's standard-wallet hooks (sign / sign-and-send) REQUIRE an RPC
+  // config for `solana:mainnet` under `config.solana.rpcs`. Without it Privy
+  // throws "No RPC configuration found for chain solana:mainnet" and crashes
+  // the app. Built client-side (needs `window` for the origin); Privy does no
+  // Solana RPC during SSR.
+  //
+  // `rpc` goes through the same-origin /api/rpc proxy -> Solana Vibe Station,
+  // so the api_key never reaches the browser. `rpcSubscriptions` targets the
+  // same origin; the proxy is HTTP-only, but the embedded wallet here only
+  // SIGNS (the Rise SDK submits + confirms), so no WS subscription is opened —
+  // `@solana/kit` creates the transport lazily.
+  const solanaConfig =
+    typeof window !== "undefined"
+      ? {
+          rpcs: {
+            "solana:mainnet": {
+              rpc: createSolanaRpc(`${window.location.origin}/api/rpc`),
+              rpcSubscriptions: createSolanaRpcSubscriptions(
+                `${window.location.origin.replace(/^http/, "ws")}/api/rpc`,
+              ),
+              blockExplorerUrl: "https://explorer.solana.com",
+            },
+          },
+        }
+      : undefined;
 
   return (
     <PrivyProvider
@@ -50,15 +67,9 @@ export function PrivyAuthProvider({ children }: { children: ReactNode }) {
             createOnLogin: "users-without-wallets",
           },
         },
-        // Solana RPC for embedded-wallet operations — see `solanaRpcUrl`
-        // above. Always present on the client so Privy never crashes.
-        ...(solanaRpcUrl
-          ? {
-              solanaClusters: [
-                { name: "mainnet-beta" as const, rpcUrl: solanaRpcUrl },
-              ],
-            }
-          : {}),
+        // Solana RPC for the embedded wallet's standard hooks — see
+        // `solanaConfig` above. Present on the client so Privy never crashes.
+        ...(solanaConfig ? { solana: solanaConfig } : {}),
       }}
     >
       {children}
