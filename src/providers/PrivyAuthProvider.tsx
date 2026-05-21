@@ -45,7 +45,7 @@ export function PrivyAuthProvider({ children }: { children: ReactNode }) {
               rpcSubscriptions: createSolanaRpcSubscriptions(
                 `${window.location.origin.replace(/^http/, "ws")}/api/rpc`,
               ),
-              blockExplorerUrl: "https://explorer.solana.com",
+              blockExplorerUrl: "https://solscan.io",
             },
           },
         }
